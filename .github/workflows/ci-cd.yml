@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -14,6 +14,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -21,6 +22,11 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: network=host
 
     - name: Log in to Container Registry
       uses: docker/login-action@v3
@@ -37,24 +43,28 @@ jobs:
         tags: |
           type=ref,event=branch
           type=ref,event=pr
-          type=sha
+          type=sha,prefix=sha-
 
     - name: Build and push app image
       uses: docker/build-push-action@v5
       with:
         context: .
-        push: true
+        push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta-app.outputs.tags }}
         labels: ${{ steps.meta-app.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
     - name: Create database Dockerfile
       run: |
-        cat > Dockerfile.db << EOF
+        cat <<EOF > Dockerfile.db
         FROM postgres:15-alpine
         ENV POSTGRES_DB=todoapp
         ENV POSTGRES_USER=todouser
         ENV POSTGRES_PASSWORD=todopass
+        COPY ./db/init.sql /docker-entrypoint-initdb.d/
         EOF
+      if: always()
 
     - name: Extract metadata for database
       id: meta-db
@@ -64,13 +74,24 @@ jobs:
         tags: |
           type=ref,event=branch
           type=ref,event=pr
-          type=sha
+          type=sha,prefix=sha-
 
     - name: Build and push database image
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile.db
-        push: true
+        file: Dockerfile.db
+        push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta-db.outputs.tags }}
         labels: ${{ steps.meta-db.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Upload build logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-logs
+        path: |
+          /tmp/build.log
+          /tmp/docker.log
