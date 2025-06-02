@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=todoapp
+      - DB_USER=todouser
+      - DB_PASSWORD=todopass
+    stdin_open: true
+    tty: true
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=todoapp
+      - POSTGRES_USER=todouser
+      - POSTGRES_PASSWORD=todopass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:
